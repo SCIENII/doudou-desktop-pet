@@ -1,0 +1,24 @@
+{
+  "id": "chef",
+  "name": "厨师豆豆",
+  "idle": "idle.png",
+  "interact": [
+    {
+      "file": "toss_low.png",
+      "ms": 170
+    },
+    {
+      "file": "toss_high.png",
+      "ms": 210
+    },
+    {
+      "file": "toss_fall.png",
+      "ms": 175
+    },
+    {
+      "file": "serve.png",
+      "ms": 400
+    }
+  ],
+  "bubble": "葵花籽出锅啦！"
+}

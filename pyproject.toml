@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doudou-desktop-pet"
+version = "0.1.0"
+description = "A pixel hamster desktop pet with a wardrobe"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PySide6-Essentials==6.12.0"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.2.0", "Pillow==12.2.0", "PyInstaller==6.21.0"]
+
+[tool.setuptools.packages.find]
+include = ["doudou_pet*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+doudou_pet = ["assets/skins/*/*.json", "assets/skins/*/*.png"]

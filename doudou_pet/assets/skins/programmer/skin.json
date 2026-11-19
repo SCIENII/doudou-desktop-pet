@@ -1,0 +1,28 @@
+{
+  "id": "programmer",
+  "name": "程序员豆豆",
+  "idle": "idle.png",
+  "interact": [
+    {
+      "file": "type_left.png",
+      "ms": 170
+    },
+    {
+      "file": "type_right.png",
+      "ms": 150
+    },
+    {
+      "file": "type_left.png",
+      "ms": 145
+    },
+    {
+      "file": "type_right.png",
+      "ms": 145
+    },
+    {
+      "file": "done.png",
+      "ms": 440
+    }
+  ],
+  "bubble": "跑通了！"
+}

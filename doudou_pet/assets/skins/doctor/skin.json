@@ -1,0 +1,16 @@
+{
+  "id": "doctor",
+  "name": "豆豆博士",
+  "idle": "idle.png",
+  "interact": [
+    {
+      "file": "wave.png",
+      "ms": 240
+    },
+    {
+      "file": "book.png",
+      "ms": 680
+    }
+  ],
+  "bubble": "让我翻翻书！"
+}

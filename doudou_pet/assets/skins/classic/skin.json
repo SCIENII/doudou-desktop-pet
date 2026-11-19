@@ -1,0 +1,20 @@
+{
+  "id": "classic",
+  "name": "原版豆豆",
+  "idle": "idle.png",
+  "interact": [
+    {
+      "file": "wave.png",
+      "ms": 220
+    },
+    {
+      "file": "idle.png",
+      "ms": 120
+    },
+    {
+      "file": "wave.png",
+      "ms": 260
+    }
+  ],
+  "bubble": "嗨，你好呀！"
+}
