@@ -13,7 +13,7 @@
 
 ## 使用
 
-适用于 Windows 10/11 x64。完整解压便携包后，双击 `DoudouPet.exe`，与 `_internal` 目录一起保留。若系统提示缺少 `MSVCP140.dll` 或 `VCRUNTIME140.dll`，安装微软官方 [Visual C++ x64 运行库](https://aka.ms/vc14/vc_redist.x64.exe) 后重试。左键点击触发动作，按住拖动；右键打开衣柜。系统托盘可切换造型、隐藏、找回或退出。可用托盘退出后再删除程序目录。
+适用于 Windows 10/11 x64。完整解压便携包后，双击 `DoudouPet.exe`，与 `_internal` 目录一起保留。便携包已自带 `msvcp140.dll` / `vcruntime140.dll`，无需预装 Visual C++ 运行库；若系统仍提示缺少某个 VC 组件，安装微软官方 [Visual C++ x64 运行库](https://aka.ms/vc14/vc_redist.x64.exe) 后重试。左键点击触发动作，按住拖动；右键打开衣柜。系统托盘可切换造型、隐藏、找回或退出。可用托盘退出后再删除程序目录。
 
 ## 从源码运行和构建
 

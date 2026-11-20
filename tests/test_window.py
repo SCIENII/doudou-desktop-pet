@@ -61,11 +61,11 @@ def skins(tmp_path, app):
 def make_window(skins):
     windows = []
 
-    def make(settings=None, on_change=None):
+    def make(settings=None, on_change=None, **options):
         assert importlib.util.find_spec("doudou_pet.window"), "PetWindow is not implemented"
         from doudou_pet.window import PetWindow
 
-        window = PetWindow(skins, settings or {}, on_change=on_change)
+        window = PetWindow(skins, settings or {}, on_change=on_change, **options)
         windows.append(window)
         window.show()
         QApplication.processEvents()
@@ -160,7 +160,7 @@ def test_switch_skin_during_interaction_stops_old_frames(make_window):
 
 def test_tray_actions_hide_show_relocate_and_toggle_top(make_window, app):
     changes = []
-    window = make_window({"position": [20, 20]}, changes.append)
+    window = make_window({"position": [20, 20]}, changes.append, tray_available=True)
     window.visibility_action.trigger()
     assert not window.isVisible()
     window.visibility_action.trigger()
@@ -176,10 +176,84 @@ def test_tray_actions_hide_show_relocate_and_toggle_top(make_window, app):
 
 
 def test_hidden_pet_stays_hidden_when_top_setting_changes(make_window):
-    window = make_window()
+    window = make_window(tray_available=True)
     window.visibility_action.trigger()
     window.top_action.trigger()
     assert not window.isVisible()
+
+
+def test_without_tray_the_pet_cannot_hide_itself(make_window):
+    window = make_window(tray_available=False)
+    assert not window.visibility_action.isEnabled()
+    window.visibility_action.trigger()
+    window.toggle_visible()
+    assert window.isVisible(), "Hiding without a tray icon would make the pet unreachable"
+    window.relocate_action.trigger()
+    assert window.isVisible()
+    assert window.visibility_action.text() == "隐藏豆豆"
+
+
+def test_long_bubble_grows_upwards_and_leaves_the_pet_in_place(make_window, skins):
+    from doudou_pet.window import PetWindow
+
+    plain = skins["plain"]
+    text = "这是一句用满清单上限的中文提示，用来确认气泡会自己长高而不是把字裁掉"
+    skins["talkative"] = type(plain)(plain.id, "Talkative", plain.idle, plain.interact, text)
+    window = make_window({"skin": "talkative"})
+    assert window.bubble.height() == PetWindow.BUBBLE_MIN_HEIGHT
+
+    needed = window.bubble_height_for(text)
+    assert needed > PetWindow.BUBBLE_MIN_HEIGHT
+    base_bottom = window.geometry().bottom()
+    base_height = window.height()
+
+    QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=window.rect().center())
+    assert window.bubble.isVisible()
+    assert window.bubble.height() >= needed
+    assert window.height() == base_height + (needed - PetWindow.BUBBLE_MIN_HEIGHT)
+    assert window.geometry().bottom() == base_bottom, "Growing the bubble must not move the pet"
+
+    window.bubble.hide()
+    window._hide_bubble()
+    QApplication.processEvents()
+    assert window.height() == base_height
+    assert window.bubble.height() == PetWindow.BUBBLE_MIN_HEIGHT
+    assert window.geometry().bottom() == base_bottom
+
+
+def test_bubble_stays_readable_within_the_window(make_window, skins, app):
+    from doudou_pet.window import PetWindow
+
+    plain = skins["plain"]
+    longest = "字" * 60  # longest bubble the manifest allows
+    skins["verbose"] = type(plain)(plain.id, "Verbose", plain.idle, plain.interact, longest)
+    window = make_window({"skin": "verbose"})
+    QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=window.rect().center())
+    box = window.bubble.geometry()
+    assert box.bottom() < window.height()
+    assert box.right() <= window.width()
+    assert window.bubble_height_for(longest) <= PetWindow.BUBBLE_MAX_HEIGHT
+    assert app.primaryScreen().availableGeometry().contains(window.frameGeometry())
+
+
+def test_position_saved_while_a_bubble_is_open_is_the_collapsed_one(make_window, skins):
+    from doudou_pet.window import PetWindow
+
+    plain = skins["plain"]
+    skins["talkative"] = type(plain)(plain.id, "Talkative", plain.idle, plain.interact, "长" * 50)
+    changes = []
+    window = make_window({"skin": "talkative", "position": [40, 60]}, changes.append)
+    collapsed = window.pos()
+    pet_bottom = window.geometry().bottom()
+    QTest.mouseClick(window, Qt.MouseButton.LeftButton, pos=window.rect().center())
+    assert window.pos().y() < collapsed.y(), "Bubble should have grown the window upwards"
+    assert window.geometry().bottom() == pet_bottom, "The pet must not move when the bubble grows"
+    window.remember()
+    assert changes[-1]["position"] == [collapsed.x(), collapsed.y()]
+    window._hide_bubble()
+    QApplication.processEvents()
+    assert window.pos() == collapsed, "Closing the bubble must put the pet back"
+    assert window.height() == PetWindow.PET_AREA_HEIGHT + PetWindow.BUBBLE_MIN_HEIGHT
 
 
 def test_tray_exit_closes_pet(make_window):

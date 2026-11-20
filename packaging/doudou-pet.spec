@@ -1,8 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
 from pathlib import Path
 
 root = Path(SPECPATH).resolve().parent
 package = root / 'doudou_pet'
+
+# The bundle filter lives outside this file so tests can import it directly.
+sys.path.insert(0, str(root / 'packaging'))
+from binary_filter import keep as keep_binary  # noqa: E402
+
 a = Analysis(
     [str(package / '__main__.py')],
     pathex=[str(root)],
@@ -11,18 +18,10 @@ a = Analysis(
               'PySide6.QtNetwork', 'PySide6.QtSvg'],
 )
 
-# PNG skins and the native Windows platform need no optional codecs or TLS plugins.
-def keep_binary(destination):
-    path = destination.replace('\\', '/').lower()
-    name = path.rsplit('/', 1)[-1]
-    if '/plugins/' in path:
-        return path.endswith(('/platforms/qwindows.dll', '/styles/qmodernwindowsstyle.dll'))
-    if name.startswith(('api-ms-win-', 'libcrypto-', 'libssl-', 'msvcp140', 'vcruntime140')):
-        return False
-    return name not in {'ucrtbase.dll', 'opengl32sw.dll', 'qt6network.dll', 'qt6svg.dll'}
-
-
+# Keep the shell plugin, the native style and the MSVC runtime; drop what this app
+# never loads. See packaging/binary_filter.py for the rules and the reasons.
 a.binaries = [entry for entry in a.binaries if keep_binary(entry[0])]
+
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='DoudouPet',
           console=False, upx=False)

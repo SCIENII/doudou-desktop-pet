@@ -1,10 +1,26 @@
 from PySide6.QtCore import QPoint, Qt, QTimer
-from PySide6.QtGui import QActionGroup, QCursor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QActionGroup, QFontMetrics, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QLabel, QMenu, QSystemTrayIcon, QWidget
 
 
 class PetWindow(QWidget):
-    def __init__(self, skins, settings, on_change=None):
+    # Asset contract: sprites are 320 px wide and leave a transparent margin under the
+    # feet, so the baseline sits at y=208 (240 px tall) or y=224 (272 px tall).
+    SPRITE_WIDTH = 320
+    SPRITE_SCALE = 0.4
+    SPRITE_FIT_HEIGHT = 113
+    PET_MARGIN_BOTTOM = 14
+    WIDTH = 168
+    # Room reserved under the bubble; the pet is painted against the window bottom, so
+    # growing the bubble pushes the top edge up and leaves the hamster where it was.
+    PET_AREA_HEIGHT = 115
+    BUBBLE_MARGIN = 3
+    BUBBLE_TOP = 2
+    BUBBLE_PADDING = 6
+    BUBBLE_MIN_HEIGHT = 37
+    BUBBLE_MAX_HEIGHT = 190
+
+    def __init__(self, skins, settings, on_change=None, tray_available=None):
         self.on_top = settings.get('always_on_top', True)
         super().__init__(None, self.flags_for(self.on_top))
         self.skins = skins
@@ -12,24 +28,25 @@ class PetWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle('豆豆桌宠')
         self.setCursor(Qt.CursorShape.OpenHandCursor)
-        self.setFixedSize(168, 152)
+        self.setFixedSize(self.width_for_bubble(), self.height_for_bubble(self.BUBBLE_MIN_HEIGHT))
         self._pixmaps = {}
         self._press = None
         self._dragging = False
         self._index = 0
+        self._anchor_bottom = None
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._next_frame)
         self.bubble = QLabel(self)
         self._bubble_timer = QTimer(self)
         self._bubble_timer.setSingleShot(True)
-        self._bubble_timer.timeout.connect(self.bubble.hide)
+        self._bubble_timer.timeout.connect(self._hide_bubble)
         self.bubble.setTextFormat(Qt.TextFormat.PlainText)
         self.bubble.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.bubble.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.bubble.setWordWrap(True)
-        self.bubble.setGeometry(3, 2, 162, 37)
         self.bubble.setStyleSheet('background:#fffdf5;color:#382e27;border:2px solid #614839;border-radius:6px;font-weight:bold;')
+        self._layout_bubble('')
         self.pet_menu = QMenu(self)
         self.wardrobe = self.pet_menu.addMenu('豆豆衣柜')
         self._wardrobe_group = QActionGroup(self)
@@ -59,10 +76,60 @@ class PetWindow(QWidget):
         self.set_skin(ident, persist=False)
         position = settings.get('position')
         self.move(self.clamp(QPoint(*position)) if position else self.home())
-        if QSystemTrayIcon.isSystemTrayAvailable():
+        self._sync_anchor()
+        self.tray_available = (QSystemTrayIcon.isSystemTrayAvailable()
+                               if tray_available is None else bool(tray_available))
+        if self.tray_available:
             self.tray.show()
         else:
+            # 没有托盘就得靠隐藏菜单之外的办法找回豆豆，所以直接禁掉隐藏
             self.visibility_action.setEnabled(False)
+
+    @classmethod
+    def width_for_bubble(cls):
+        return cls.WIDTH
+
+    @classmethod
+    def height_for_bubble(cls, bubble_height):
+        return cls.PET_AREA_HEIGHT + bubble_height
+
+    def bubble_height_for(self, text):
+        """Height the bubble needs for `text`, clamped to the layout limits."""
+        if not text:
+            return self.BUBBLE_MIN_HEIGHT
+        width = self.WIDTH - 2 * self.BUBBLE_MARGIN - 2 * self.BUBBLE_PADDING
+        needed = QFontMetrics(self.bubble.font()).boundingRect(
+            0, 0, width, 10_000, Qt.TextFlag.TextWordWrap, text).height() + 2 * self.BUBBLE_PADDING
+        return max(self.BUBBLE_MIN_HEIGHT, min(self.BUBBLE_MAX_HEIGHT, needed))
+
+    def _layout_bubble(self, text):
+        """Fit the bubble to its text, keeping the pet's resting place on screen."""
+        height = self.bubble_height_for(text)
+        width = self.WIDTH - 2 * self.BUBBLE_MARGIN
+        self.bubble.setGeometry(self.BUBBLE_MARGIN, self.BUBBLE_TOP, width, height)
+        total = self.height_for_bubble(height)
+        collapsed = height == self.BUBBLE_MIN_HEIGHT
+        if self._anchor_bottom is None:
+            self._anchor_bottom = self.y() + self.height()
+        if self.height() == total:
+            if collapsed:
+                # Resting: the pet's baseline is the current bottom edge.
+                self._anchor_bottom = self.y() + total
+            return
+        self.setFixedSize(self.WIDTH, total)
+        self.move(self.clamp(QPoint(self.x(), self._anchor_bottom - total)))
+        if collapsed:
+            self._anchor_bottom = self.y() + total
+
+    def collapsed_position(self):
+        """Top-left corner the window takes when no bubble is showing."""
+        if self._anchor_bottom is None:
+            return self.pos()
+        return QPoint(self.x(), self._anchor_bottom - self.height_for_bubble(self.BUBBLE_MIN_HEIGHT))
+
+    def _hide_bubble(self):
+        self.bubble.hide()
+        self._layout_bubble('')
 
     @staticmethod
     def flags_for(on_top):
@@ -81,18 +148,14 @@ class PetWindow(QWidget):
 
     def remember(self):
         if self.on_change:
-            self.on_change(dict(skin=self.skin.id, position=[self.x(), self.y()], always_on_top=self.on_top))
+            # Save the collapsed position: a bubble may have grown the window upwards,
+            # and that offset must not leak into the next launch.
+            point = self.collapsed_position()
+            self.on_change(dict(skin=self.skin.id, position=[point.x(), point.y()], always_on_top=self.on_top))
 
     def _pixmap(self, path):
         if path not in self._pixmaps:
-            original = QPixmap(str(path))
-            image = original.toImage()
-            if not original.isNull():
-                # Use one anchor per costume, so a moving prop never shifts the pet.
-                result = original
-            else:
-                result = QPixmap()
-            self._pixmaps[path] = result
+            self._pixmaps[path] = QPixmap(str(path))
         return self._pixmaps[path]
 
     def set_skin(self, ident, persist=True):
@@ -109,13 +172,15 @@ class PetWindow(QWidget):
         self._timer.stop()
         self.frame_path = self.skin.idle
         self._bubble_timer.stop()
-        self.bubble.hide()
+        self._hide_bubble()
         self.update()
 
     def _interact(self):
         self._index = -1
-        self.bubble.setText(self.skin.bubble)
-        self.bubble.setVisible(bool(self.skin.bubble))
+        text = self.skin.bubble
+        self.bubble.setText(text)
+        self._layout_bubble(text)
+        self.bubble.setVisible(bool(text))
         self._bubble_timer.start(max(1500, sum(frame.ms for frame in self.skin.interact)))
         self._next_frame()
 
@@ -135,13 +200,19 @@ class PetWindow(QWidget):
         if pixmap.isNull():
             return
         painter = QPainter(self)
-        factor = min(1.0, self.width() / pixmap.width(), 113 / pixmap.height())
-        if pixmap.width() >= 320:
-            factor = 0.4
+        factor = min(1.0, self.width() / pixmap.width(), self.SPRITE_FIT_HEIGHT / pixmap.height())
+        tall_sprite = pixmap.width() >= self.SPRITE_WIDTH
+        if tall_sprite:
+            factor = self.SPRITE_SCALE
         w, h = round(pixmap.width() * factor), round(pixmap.height() * factor)
-        anchor = round((224 if pixmap.height() == 272 else 208) * factor) if pixmap.width() == 320 else h // 2 + 14
+        if tall_sprite:
+            # Anchor the feet to the baseline instead of the canvas bottom.
+            baseline = 224 if pixmap.height() > 240 else 208
+            anchor = round(baseline * factor)
+            y = self.height() - self.PET_MARGIN_BOTTOM - anchor
+        else:
+            y = self.height() // 2 - h // 2
         scaled = pixmap.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.FastTransformation)
-        y = self.height() - 14 - anchor if pixmap.width() == 320 else self.height() // 2 - h // 2
         painter.drawPixmap((self.width() - w) // 2, y, scaled)
         painter.end()
 
@@ -172,9 +243,14 @@ class PetWindow(QWidget):
         self.setCursor(Qt.CursorShape.OpenHandCursor)
         if self._dragging:
             self.move(self.clamp(self.pos()))
+            self._sync_anchor()
             self.remember()
         else:
             self._interact()
+
+    def _sync_anchor(self):
+        """The pet is painted against the window bottom, so that edge follows the user."""
+        self._anchor_bottom = self.y() + self.height()
 
     def set_top(self, checked):
         visible = self.isVisible()
@@ -182,12 +258,15 @@ class PetWindow(QWidget):
         self.on_top = checked
         self.setWindowFlags(self.flags_for(checked))
         self.move(point)
+        self._sync_anchor()
         if visible:
             self.show()
         self.remember()
 
     def toggle_visible(self):
         if self.isVisible():
+            if not self.tray_available:
+                return  # 没有托盘图标，藏起来就再也点不到了
             self.hide()
             self.visibility_action.setText('显示豆豆')
         else:
@@ -196,6 +275,7 @@ class PetWindow(QWidget):
 
     def relocate(self):
         self.move(self.home())
+        self._sync_anchor()
         if not self.isVisible():
             self.toggle_visible()
         self.remember()
